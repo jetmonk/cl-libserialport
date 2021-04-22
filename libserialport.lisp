@@ -72,7 +72,6 @@ qualities bus, address, vendor-id, product-id."
 	 (usb-addr-ptr :int))
       (let ((retval
 	      (sp-get-port-usb-bus-address port-ptr usb-bus-ptr usb-addr-ptr)))
-	(format t "Port: ~A retval: ~A~%" name retval)
 	(cond ((eq retval :sp-ok)
 	       (setf usb-bus (cffi:mem-aref usb-bus-ptr :int))
 	       (setf usb-address (cffi:mem-aref usb-addr-ptr :int)))
