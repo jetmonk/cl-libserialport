@@ -11,11 +11,16 @@
 
 (in-package libserialport)
 
-;; FIXME
-(cffi:load-foreign-library "./lib/libserialport.dylib")
+(cffi:define-foreign-library libserialport
+  (:darwin (:or "libserialport.0.dylib" "libserialport.dylib"))
+  (:unix (:or "libserialport.so"))
+  (t (:default "libserialport")))
+
+(cffi:use-foreign-library libserialport)
 
 (cffi:defctype enum :int)
 
+;; this should work; otherwise we'd have to grovel
 (cffi:defctype size_t #.(cond ((= 4 (cffi:foreign-type-size :pointer))
 			       :uint32)
 			      ((= 8 (cffi:foreign-type-size :pointer))
