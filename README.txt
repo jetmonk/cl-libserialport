@@ -11,6 +11,7 @@ It is nice because it is easy to use, cross-platform, and provides
 straightforward access to traditional, bluetooth, and USB serial
 devices.
 
+Depends on: BABEL, CFFI
 
 This Lisp package provides an interface to all exported functions
 of libserialport.
