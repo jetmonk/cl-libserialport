@@ -49,8 +49,12 @@
   (and (aref (serial-port-alive serial-port) 0)
        (serial-port-port-ptr serial-port)))
 
-(defun build-serial-port-description-for-ptr (port-ptr)
-  "This returns a SERIAL-PORT-DESCRIPTION or NULL if an error occurs."
+(defun build-serial-port-description-for-ptr (port-ptr &key (include-errors nil))
+  "This returns a SERIAL-PORT-DESCRIPTION or NULL if an error occurs.
+
+If INCLUDE-ERRORS is set, then error responses (as keywords) are
+returned in the slots instead of NIL.  This works only for USB
+qualities bus, address, vendor-id, product-id."
   (let ((name (sp-get-port-name port-ptr))
 	(description (sp-get-port-description port-ptr))
 	(transport (sp-get-port-transport port-ptr))
@@ -68,18 +72,26 @@
 	 (usb-addr-ptr :int))
       (let ((retval
 	      (sp-get-port-usb-bus-address port-ptr usb-bus-ptr usb-addr-ptr)))
-	(when (eq retval :sp-ok)
-	  (setf usb-bus (cffi:mem-aref usb-bus-ptr :int))
-	  (setf usb-address (cffi:mem-aref usb-addr-ptr :int)))))
+	(format t "Port: ~A retval: ~A~%" name retval)
+	(cond ((eq retval :sp-ok)
+	       (setf usb-bus (cffi:mem-aref usb-bus-ptr :int))
+	       (setf usb-address (cffi:mem-aref usb-addr-ptr :int)))
+	      (include-errors
+	       (setf usb-bus retval)
+	       (setf usb-address retval)))))
+	       
 
      (cffi:with-foreign-objects
 	((usb-vid-ptr :int)
 	 (usb-pid-ptr :int))
       (let ((retval
 	      (sp-get-port-usb-vid-pid port-ptr usb-vid-ptr usb-pid-ptr)))
-	(when (eq retval :sp-ok)
-	  (setf usb-vendor-id (cffi:mem-aref usb-vid-ptr :int))
-	  (setf usb-product-id (cffi:mem-aref usb-pid-ptr :int)))))
+	(cond ((eq retval :sp-ok)
+	       (setf usb-vendor-id (cffi:mem-aref usb-vid-ptr :int))
+	       (setf usb-product-id (cffi:mem-aref usb-pid-ptr :int)))
+	      (include-errors
+	       (setf usb-vendor-id retval)
+	       (setf usb-product-id retval)))))
 
     (setf usb-manufacturer
 	  (sp-get-port-usb-manufacturer port-ptr))
@@ -107,9 +119,13 @@
   (assert (serial-port-alive-p serial-port))
   (build-serial-port-description (serial-port-port-ptr serial-port)))
 
-(defun list-serial-ports ()
+(defun list-serial-ports (&key (include-errors nil))
   "List available (though not necessarily connected) serial ports,
-returning a list of SERIAL-PORT-DESCRIPTION structures."
+returning a list of SERIAL-PORT-DESCRIPTION structures.
+
+If INCLUDE-ERRORS is set, then error responses (as keywords) are
+returned in the slots instead of NIL.  This works only for USB
+qualities bus, address, vendor-id, product-id."
   (cffi:with-foreign-object (port-ptr-ptr-ptr :pointer)
     (let ((retval (sp-list-ports port-ptr-ptr-ptr)))
       (when (not (eq retval :sp-ok))
@@ -119,7 +135,9 @@ returning a list of SERIAL-PORT-DESCRIPTION structures."
 	for i from 0
 	for port-ptr = (cffi:mem-aref port-ptr-ptr :pointer i)
 	until (cffi:null-pointer-p  port-ptr)
-	collect  (build-serial-port-description-for-ptr port-ptr)
+	collect  (build-serial-port-description-for-ptr
+		  port-ptr
+		  :include-errors include-errors)
 	finally
 	   (sp-free-port-list port-ptr-ptr)))))
 
