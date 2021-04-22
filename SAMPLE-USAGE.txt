@@ -1,0 +1,74 @@
+
+;; list serial ports
+cl-user> (libserialport:list-serial-ports :include-errors t)
+
+( #S(libserialport:serial-port-description
+    :name "/dev/cu.usbserial"
+    :description "USB-Serial Controller D"
+    :transport :sp-transport-usb
+    :usb-bus :sp-err-supp   ;; usb bus id not supported
+    :usb-address :sp-err-supp
+    :usb-vendor-id 1659
+    :usb-product-id 8963
+    :usb-manufacturer "Prolific Technology Inc. "
+    :usb-product "USB-Serial Controller D"
+    :usb-serial-number nil
+    :bluetooth-mac-address nil))
+
+
+;; open a serial port
+cl-user> (defparameter *my-serial-port*
+	   (libserialport:open-serial-port 
+	    "/dev/cu.usbserial"
+	    :baud 115200
+	    :bits 8
+	    :stopbits 1 
+	    :parity :sp-parity-none 
+	    :flowcontrol :sp-flowcontrol-none))
+
+*my-serial-port*
+
+;; examine the SERIAL-PORT object
+cl-user> *my-serial-port*
+
+#S(libserialport:serial-port
+   :name "/dev/cu.usbserial"
+   :port-ptr #.(sb-sys:int-sap #X7FE4B7403080)
+   :fbuf #.(sb-sys:int-sap #X7FE4A7403C70)
+   :alive #(t)
+   :baud 115200
+   :bits 8
+   :stopbits 1
+   :parity :sp-parity-none
+   :rts :sp-rts-off
+   :cts :sp-cts-ignore
+   :dtr :sp-dtr-off
+   :dsr :sp-dsr-ignore
+   :xonxoff :sp-xonxoff-disabled
+   :flowcontrol :sp-flowcontrol-none
+   :transport nil)
+
+;; write a command to the device - it can be a string, octet vector, byte, char
+cl-user> (libserialport:serial-write-data  *my-serial-port*
+	                                   "TEST-COMMAND"
+					   :line-end :lf)
+					   
+13 ;; bytes written  (length of string plus #\lf)
+
+;; read a line
+cl-user> (libserialport:serial-read-line   *spec*)
+
+"TEST-COMMAND"  ;; this device  echoed the line back
+t               ;; T means we read an entire line (including the
+                ;; ending linefeed)
+nil             ;; NIL means that there was no string decoding error (in Babel)
+#(84 69 83 84 45 67 79 77 77 65 78 68) ;; the octets that were read, if the
+                                       ;; string decoding didn't work,
+				       ;; excluding the #\lf and the  #\cr
+				       ;; stripped by default
+
+
+;; shut down the serial port
+cl-user> (libserialport:shutdown-serial-port *my-serial-port*)
+
+nil

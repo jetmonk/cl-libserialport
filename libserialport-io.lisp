@@ -275,7 +275,7 @@ octets, possibly minus the #\Return."
       (vector-pop ovec))
     ;;
     (multiple-value-bind (string decoding-error)
-	(babel:octets-to-string ovec :encoding encoding)
+	(ignore-errors (babel:octets-to-string ovec :encoding encoding))
       (values string
 	      (eql final-byte (char-code line-termination-char))
 	      decoding-error
