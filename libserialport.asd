@@ -1,7 +1,7 @@
 
 
 (asdf:defsystem libserialport
-  :depends-on (cffi babel)
+  :depends-on (cffi babel bordeaux-threads)
   :components
   ((:file "libserialport-package")
    (:file  "libserialport-ffi" :depends-on ("libserialport-package"))

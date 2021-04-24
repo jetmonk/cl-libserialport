@@ -9,9 +9,9 @@
   (port-ptr nil)
   ;; foreign buffer of size +serial-buff-size+
   (fbuf nil)
-  ;; a vector #(T) if this port is alive - used for wrapping in a
-  ;; lambda for possible finalization, because a finalizer lambda can't
-  ;; close around SERIAL-PORT object
+  ;; a vector #(T) if this port is alive - may be wrapped in a lambda
+  ;; for possible finalization, because a finalizer lambda can't close
+  ;; around SERIAL-PORT object.  Currently, there is no finalization.
   (alive (make-array 1 :initial-contents '(T)))
   (baud nil)
   (bits nil)
@@ -38,6 +38,35 @@
   usb-serial-number
   bluetooth-mac-address)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Note used serial ports in *SERIAL-PORT-HASH* when they are opened,
+;; and remove them when shut down.  This is the current alternative to
+;; finalization, because it is really user's job to keep track of, and
+;; cleanly shut down, serial ports rather than trusting the GC.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defvar *serial-port-hash*
+  (make-hash-table :test 'equal))
+					    			 
+(defvar *serial-port-lock* (bordeaux-threads:make-lock "serial-port-hash-lock"))
+
+(defun %note-serial-port-as-open (serial-port)
+  (declare (type serial-port serial-port))
+  (bordeaux-threads:with-lock-held (*serial-port-lock*)
+    (setf (gethash (serial-port-name serial-port) *serial-port-hash*)
+	  serial-port)))
+
+(defun %note-serial-port-as-closed (serial-port)
+  (declare (type serial-port serial-port))
+  (bordeaux-threads:with-lock-held (*serial-port-lock*)
+    (remhash (serial-port-name serial-port) *serial-port-hash*)))
+
+(defun %serial-port-open-p (location-or-serial-port)
+  (declare (type (or string serial-port) location-or-serial-port))
+  (let ((key (cond ((stringp location-or-serial-port) location-or-serial-port)
+		   (t (serial-port-name location-or-serial-port)))))
+    (bordeaux-threads:with-lock-held (*serial-port-lock*)
+      (gethash key *serial-port-hash*))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; mark serial port as un-alive 
 (defun %set-serial-port-unalive (serial-port)
@@ -141,15 +170,34 @@ qualities bus, address, vendor-id, product-id."
 	   (sp-free-port-list port-ptr-ptr)))))
 
 (defun shutdown-serial-port (serial-port)
+  "Shut down a serial port, returning T."
   (declare (type serial-port serial-port))
   (when (serial-port-alive-p serial-port)
-    (sp-close (serial-port-port-ptr serial-port))
+    (let ((retval (sp-close (serial-port-port-ptr serial-port))))
+      (when (not (eq retval :sp-ok))
+	(error "Error ~A closing serial port ~A"
+	       retval (serial-port-name serial-port))))
     (sp-free-port  (serial-port-port-ptr serial-port))
     (when (serial-port-fbuf serial-port)
       (cffi:foreign-free (serial-port-fbuf serial-port))
       (setf (serial-port-fbuf serial-port) nil))
     (%set-serial-port-unalive serial-port)
-    (setf (serial-port-port-ptr serial-port) nil)))
+    (%note-serial-port-as-closed serial-port)
+    (setf (serial-port-port-ptr serial-port) nil)
+    t))
+
+(defun shutdown-all-serial-ports ()
+  "Shut down all serial ports in *SERIAL-PORT-HASH*.
+Returns list of the form ((NAME1 .  NIL-OR-ERROR) (NAME2 . NIL-OR-ERROR))
+where NIL-OR-ERROR is NIL on success, or an error object on the closing."
+  (let ((pairs nil))
+    (maphash (lambda (key val)
+	       (multiple-value-bind (ret err)
+		   (ignore-errors (shutdown-serial-port val))
+		 (declare (ignore ret))
+		 (push (cons key err) pairs)))
+	     *serial-port-hash*)
+    pairs))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; the next two macros bind buffers to variables, using pre-allocated
@@ -379,6 +427,11 @@ DSR can be :SP-DSR-{IGNORE,FLOW-CONTROL}
 			  (namestring port-name) port-name))
 	 port-ptr)
 
+    (when (%serial-port-open-p port-string)
+      (error "Serial port ~A is already open (in *SERIAL-PORT-HASH*).  Cannot open again."
+	     port-string))
+    
+
     ;; find the port by name and set PORT-PTR
     (cffi:with-foreign-object (ptrvec :pointer)
       (let ((retval (sp-get-port-by-name port-string ptrvec)))
@@ -403,7 +456,7 @@ DSR can be :SP-DSR-{IGNORE,FLOW-CONTROL}
        :xonxoff xonxoff :flowcontrol flowcontrol :rts rts :cts cts
        :dtr dtr :dsr dsr
        :shutdown-on-failure t)
-      
+      (%note-serial-port-as-open serial-port)
       serial-port)))
 			
 

@@ -11,7 +11,7 @@ It is nice because it is easy to use, cross-platform, and provides
 straightforward access to traditional, bluetooth, and USB serial
 devices.
 
-Depends on: BABEL, CFFI
+Depends on: BABEL, CFFI, BORDEAUX-THREADS
 
 This Lisp package provides an interface to all exported functions
 of libserialport.
@@ -31,6 +31,10 @@ SERIAL-PORT
 ;; and BUILD-SERIAL-PORT-DESCRIPTION
 SERIAL-PORT-DESCRIPTION 
 
+;; A hash with location eg key="/usr/dev/tty.serial" and val=SERIAL-PORT
+;; that keeps track of open serial ports - because of this
+;; serial ports don't get garbage collected
+*SERIAL-PORT-HASH*
 
 ;; list serial ports on a computer, as SERIAL-PORT-DESCRIPTION objects
 (LIST-SERIAL-PORTS)  
@@ -39,7 +43,10 @@ SERIAL-PORT-DESCRIPTION
 (BUILD-SERIAL-PORT-DESCRIPTION SERIAL-PORT) 
 
 ;;  shut down open serial port
-(SHUTDOWN-SERIAL-PORT SERIAL-PORT) 
+(SHUTDOWN-SERIAL-PORT SERIAL-PORT)
+
+;; shut down all open ports in *SERIAL-PORT-HASH*
+(SHUTDOWN-ALL-SERIAL-PORTS)
 
 ;;  open  a named serial port, with various qualities given by keywords.
 (OPEN-SERIAL-PORT "/dev/tty.serial"
@@ -88,7 +95,11 @@ SERIAL-PORT-DESCRIPTION
   :BLOCKING NIL
   :TIMEOUT 1000)
 
-;; read octets until it hits FINAL-OCTET, which is not returned
+;; Read octets until it hits FINAL-OCTET, which is not returned.  The
+;; character readling loop checks for character ready, and uses a
+;; short internal SLEEP if not, while checking for elapsed time, so
+;; the timeout is imposed at the library levelif BLOCKING,
+;; and always at the Lisp level.
 (SERIAL-READ-OCTETS-UNTIL SERIAL-PORT FINAL-OCTAT
   :BLOCKING NIL
   :TIMEOUT 1000

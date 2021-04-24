@@ -8,11 +8,12 @@
    #:sp-last-error-message
    #:sp-last-error-code
 
-   #:serial-port #:serial-port-p #:serial-port-alive #:serial-port-baud
+   #:serial-port #:serial-port-p
+   #:serial-port-name #:serial-port-alive #:serial-port-baud
    #:serial-port-bits #:serial-port-stopbits #:serial-port-parity
    #:serial-port-rts #:serial-port-cts #:serial-port-dtr #:serial-port-dsr
    #:serial-port-xonxoff #:serial-port-flowcontrol #:serial-port-transport
-   
+
    #:serial-port-description #:serial-port-description-p
    #:serial-port-description-name
    #:serial-port-description-description
@@ -26,11 +27,14 @@
    #:serial-port-description-usb-serial-number
    #:serial-port-description-bluetooth-mac-address
 
+   #:*serial-port-hash*
+   
    #:list-serial-ports
    #:build-serial-port-description
 
    #:serial-port-alive-p
    #:shutdown-serial-port
+   #:shutdown-all-serial-ports
    #:set-serial-port-qualities
    #:open-serial-port
 

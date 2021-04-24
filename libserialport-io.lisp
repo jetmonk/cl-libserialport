@@ -204,44 +204,96 @@ Returns (VALUES OCTETS NUM-OCTETS-READ)."
     (when byte (code-char byte))))
 
 
+(defun serial-input-waiting (serial-port)
+  "Returns the number of input octets waiting in the SERIAL-PORT.
+Can also return a non-negtive number or a keyword indicating an error."
+  (assert (serial-port-alive-p serial-port))
+  (let ((ret (sp-input-waiting (serial-port-port-ptr serial-port))))
+    (when (eq ret :sp-ok) (setf ret 0))
+    (when (symbolp ret)
+      (error "ERROR ~A in serial-input-waiting." ret))
+    ret))
+  
+
+(defun serial-output-waiting (serial-port)
+  "Returns the number of input octets waiting in the SERIAL-PORT.
+Can also return a non-negtive number or a keyword indicating an error."
+  (assert (serial-port-alive-p serial-port))
+   (let ((ret (sp-output-waiting (serial-port-port-ptr serial-port))))
+     (when (eq ret :sp-ok) (setf ret 0))
+     (when (symbolp ret)
+      (error "ERROR ~A in serial-output-waiting." ret))
+     ret))
+
 (defun serial-read-octets-until (serial-port final-octet
 				 &key
 				   (blocking nil)
 				   (timeout 1000)
 				   (max-length 65536)
-				   (octet-buf nil))
+				   (octet-buf nil)
+				   (append nil))
   "Read a vector of octets from SERIAL-PORT until FINAL-OCTET is read,
 returning an octet array, without the final octet.  MAX-LENGTH is the
 maximum permitted length.
 
-Returns (VALUES OCTET-VECTOR FINAL-OCTET-READ).  If FINAL-OCTET-READ
-is not FINAL-OCTET the it will be NIL, which probably means the
-operation timed out.
+Returns (VALUES OCTET-VECTOR FINAL-OCTET-READ TIMED-OUT-P).  If
+FINAL-OCTET-READ is not FINAL-OCTET the it will be NIL, which probably
+means the operation timed out.  TIMED-OUT-P is true if a timeout occurred
+in the char-by-char loop to read octets.
 
-The TIMEOUT is the individual octet read timeout, not the total timeout.
+The TIMEOUT is both the individual octet read timeout (if BLOCKING), and
+a total TIMEOUT to accumulate bytes.
+
+Note that the presence of TIMEOUT in the internal character gathering
+loop means that the call is effectively blocking, even if BLOCKING is NIL.
+(TIMEOUT=0 still means infinite timeout).
 
 OCTET-BUF is an optional output array.  If given, it must be an adjustable
-   (unsigned-byte 8) array with a fill pointer."
+   (unsigned-byte 8) array with a fill pointer.
 
-  (when octet-buf
-    (when (not (and (adjustable-array-p octet-buf)
-		    (typep octet-buf '(array (unsigned-byte 8) (*)))
-		    (array-has-fill-pointer-p octet-buf)))
-      (error "OCTET-BUF is not a (unsigned-byte 8) array that is adjutable and has a fill pointer.")))
+If APPEND is true, then it will continue to append to OCTET-BUF; otherwise
+OCTET-BUF is reset to start."
+
+  (cond
+    (octet-buf
+     (when (not (and (adjustable-array-p octet-buf)
+		     (typep octet-buf '(array (unsigned-byte 8) (*)))
+		     (array-has-fill-pointer-p octet-buf)))
+       (error "OCTET-BUF is not a (unsigned-byte 8) array that is adjutable and has a fill pointer."))
+     (when (not append) (setf (fill-pointer octet-buf) 0)))
+    (t ;; no octet-buf
+     (when append
+       (error "ERROR in SERIAL-READ-OCTETS-UNTIL - APPEND cannot be used unless OCTET-BUF is supplied"))))
+
   
-  (let ((ovec (or octet-buf
-		  (make-array 32 :element-type '(unsigned-byte 8)
-				 :adjustable t :fill-pointer 0))))
+  
+  (let* ((ovec (or octet-buf
+		   (make-array 32 :element-type '(unsigned-byte 8)
+				  :adjustable t :fill-pointer 0)))
+	 (clock-ticks-timeout (round (/ (* 1000.0 timeout) internal-time-units-per-second)))
+	 (end-time  (+ (get-internal-real-time) clock-ticks-timeout)))
+    (declare (type fixnum clock-ticks-timeout end-time))
     (loop with nbytes-read = 0
-	  for byte = (serial-read-octet serial-port
-					:blocking blocking :timeout timeout)
-	  do (cond ((or (eql byte final-octet) (eql byte nil))
-		    (return (values ovec byte)))
-		   (t
-		    (incf nbytes-read)
-		    (when (> nbytes-read max-length)
-		      (error "Number of bytes read exceeds MAX-LENGTH=~A" max-length))
-		    (vector-push-extend byte ovec))))))
+	  for timed-out-p = (and (plusp timeout) ;; zero timeout means infinite
+				 (> (get-internal-real-time) end-time))
+	  for data-ready = (serial-input-waiting serial-port)
+	  if (and (not timed-out-p)
+		  (not (plusp data-ready)))
+	     do 
+		(sleep 1e-4)
+	  else
+	    do
+	       (let ((byte (serial-read-octet serial-port
+					      :blocking blocking :timeout timeout)))
+		 (cond ((or timed-out-p
+			    (eql byte final-octet) 
+			    (eql byte nil))
+			(return (values ovec byte timed-out-p)))
+		       (t
+			(incf nbytes-read)
+			(when (> nbytes-read max-length)
+			  (error "Number of bytes read exceeds MAX-LENGTH=~A" max-length))
+			(vector-push-extend byte ovec)))))))
 
 (defun serial-read-line (serial-port
 			 &key
@@ -256,18 +308,24 @@ octets (not chars), and the line ends with LINE-TERMINATION-CHAR (by
 default #\linefeed), and by default a final #\Return char is stripped
 to allow DOS lines to be read.
 
-TIMEOUT is the timeout of an individual octet read, not the entire
-call.
+The TIMEOUT is both the individual octet read timeout (if BLOCKING), and
+a total TIMEOUT to accumulate bytes.
 
-Returns (VALUES STRING FINISHED-LINE-P DECODING-ERROR OCTETS) where
-FINISHED-LINE-P is true if LINE-TERMINATION-CHAR was reached;
+Note that the presence of TIMEOUT in the internal character gathering
+loop means that the call is effectively blocking, even if BLOCKING is NIL.
+(TIMEOUT=0 still means infinite timeout).
+
+Returns (VALUES STRING FINISHED-LINE-P DECODING-ERROR OCTETS TIMED-OUT-P) 
+where FINISHED-LINE-P is true if LINE-TERMINATION-CHAR was reached;
 otherwise there may have been a timeout.  STRING can be NIL if there
 is an error in Babel decoding the string using the encoding given, in
 which case DECODING-ERROR is non-NIL.  OCTETS is the vector of raw
 octets, possibly minus the #\Return."
-  (multiple-value-bind (ovec final-byte)
+  (multiple-value-bind (ovec final-byte timed-out-p)
       (serial-read-octets-until serial-port (char-code line-termination-char)
-				:blocking blocking :timeout timeout :max-length max-length)
+				:blocking blocking
+				:timeout timeout
+				:max-length max-length)
     ;; get rid of final #\Return
     (when (and ignore-final-carriage-return
 	       (plusp (length ovec))
@@ -279,22 +337,12 @@ octets, possibly minus the #\Return."
       (values string
 	      (eql final-byte (char-code line-termination-char))
 	      decoding-error
-	      ovec))))
+	      ovec
+	      timed-out-p))))
 
 
 
-(defun serial-input-waiting (serial-port)
-  "Returns the number of input octets waiting in the SERIAL-PORT.
-Can also return a non-negtive number or a keyword indicating an error."
-  (assert (serial-port-alive-p serial-port))
-  (sp-input-waiting (serial-port-port-ptr serial-port)))
-  
 
-(defun serial-output-waiting (serial-port)
-  "Returns the number of input octets waiting in the SERIAL-PORT.
-Can also return a non-negtive number or a keyword indicating an error."
-  (assert (serial-port-alive-p serial-port))
-  (sp-output-waiting (serial-port-port-ptr serial-port)))
 
 
 (defun serial-flush-buffer (serial-port &key (flush-input-buffer t) (flush-output-buffer t))
