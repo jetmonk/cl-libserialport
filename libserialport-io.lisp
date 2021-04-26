@@ -187,7 +187,7 @@ Returns (VALUES OCTETS NUM-OCTETS-READ)."
 		    do (vector-push-extend
 			(cffi:mem-ref fbuf :unsigned-char i)
 			obuf))
-	      (return-from retblock (values fbuf nbytes-read))))))))
+	      (return-from retblock (values obuf nbytes-read))))))))
 
 
 
