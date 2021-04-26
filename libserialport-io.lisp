@@ -241,8 +241,8 @@ FINAL-OCTET-READ is not FINAL-OCTET the it will be NIL, which probably
 means the operation timed out.  TIMED-OUT-P is true if a timeout occurred
 in the char-by-char loop to read octets.
 
-The TIMEOUT is both the individual octet read timeout (if BLOCKING), and
-a total TIMEOUT to accumulate bytes.
+The TIMEOUT in milliseconds is both the individual octet read
+timeout (if BLOCKING), and a total TIMEOUT to accumulate bytes.
 
 Note that the presence of TIMEOUT in the internal character gathering
 loop means that the call is effectively blocking, even if BLOCKING is NIL.
@@ -270,7 +270,8 @@ OCTET-BUF is reset to start."
   (let* ((ovec (or octet-buf
 		   (make-array 32 :element-type '(unsigned-byte 8)
 				  :adjustable t :fill-pointer 0)))
-	 (clock-ticks-timeout (round (/ (* 1000.0 timeout) internal-time-units-per-second)))
+	 (clock-ticks-timeout ;; internal clock ticks
+	   (round (* internal-time-units-per-second (/ timeout 1000.0))))
 	 (end-time  (+ (get-internal-real-time) clock-ticks-timeout)))
     (declare (type fixnum clock-ticks-timeout end-time))
     (loop with nbytes-read = 0
