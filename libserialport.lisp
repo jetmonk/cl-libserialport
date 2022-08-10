@@ -207,6 +207,7 @@ where NIL-OR-ERROR is NIL on success, or an error object on the closing."
 ;; a foreign pointer containing at least nbytes.   But if nbytes
 ;; is <+serial-buff-size+ it uses the buffer in serial port.  Useful for reading
 ;; char by char beause there won't be a malloc with every char.
+#+nil
 (defmacro with-serial-port-buffer ((varname serial-port nbytes) &body body)
   (let ((body-func-name (gensym "WITH-SERIAL-PORT-BUFFER-BODY"))
 	(tmpbufname (gensym "WITH-SERIAL-PORT-BUFFER-TMP"))
@@ -215,10 +216,30 @@ where NIL-OR-ERROR is NIL on success, or an error object on the closing."
     `(let ((,nbytes-name ,nbytes))
        (flet ((,body-func-name (,varname)
 		,@body))
-	 (if (<= ,nbytes-name +serial-buff-size+)
+	 (if (<= ,nbytes-name +serial-buff-size+) 
 	     (,body-func-name (serial-port-fbuf ,serial-port))
 	     (cffi:with-foreign-object (,tmpbufname :unsigned-char ,nbytes-name)
 	       (,body-func-name ,tmpbufname)))))))
+
+;; newer version that allocates the foreign buffer on the heap rather than the C-stack
+(defmacro with-serial-port-buffer ((varname serial-port nbytes) &body body)
+  (let ((body-func-name (gensym "WITH-SERIAL-PORT-BUFFER-BODY"))
+	(tmpbufname (gensym "WITH-SERIAL-PORT-BUFFER-TMP"))
+	(nbytes-name (gensym "NBYTES")))
+    ;; use fixed buffer, or a larger buffer if needed
+    `(let ((,nbytes-name ,nbytes))
+       (flet ((,body-func-name (,varname)
+		,@body))
+	 (if (<= ,nbytes-name +serial-buff-size+)
+	     (,body-func-name (serial-port-fbuf ,serial-port))
+	     (progn ;; nbytes too big, so allocate on foreign heap
+	       (let ((,tmpbufname nil))
+		 (unwind-protect
+		      (progn
+			(setf ,tmpbufname (cffi:foreign-alloc :unsigned-char :count ,nbytes-name))
+			(,body-func-name ,tmpbufname))
+		   (progn
+		     (cffi:foreign-free ,tmpbufname))))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;		 
 

@@ -42,7 +42,8 @@ SERIAL-PORT-DESCRIPTION
 ;; create a SERIAL-PORT-DESCRIPTION  from a SERIAL-PORT
 (BUILD-SERIAL-PORT-DESCRIPTION SERIAL-PORT) 
 
-;;  shut down open serial port
+;;  shut down open serial port - this must be done to deallocate foreign
+;;      memory consisting of the port, and a buffer
 (SHUTDOWN-SERIAL-PORT SERIAL-PORT)
 
 ;; shut down all open ports in *SERIAL-PORT-HASH*
