@@ -136,8 +136,8 @@ Returns (VALUES OCTETS NUM-OCTETS-READ)."
   
   ;; allocate foreign and Lisp storage, trying to use buffers inside
   ;; serial-port
-  (block retblock
-    (with-serial-port-buffer (fbuf serial-port count)
+  (with-serial-port-buffer (fbuf serial-port count)
+    (block retblock
       (let ((acount (abs count))
 	    (nbytes-read nil))
 	
